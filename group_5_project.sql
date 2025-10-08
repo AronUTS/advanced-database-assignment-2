@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS bronze.facility_raw (
 -- ============================
 
 -- Sensor data generator
-CREATE OR REPLACE FUNCTION generate_bronze_sensor_data(n INT DEFAULT 100)
+CREATE OR REPLACE FUNCTION bronze.generate_bronze_sensor_data(n INT DEFAULT 100)
 RETURNS VARIANT
 LANGUAGE PYTHON
 RUNTIME_VERSION = '3.11'
@@ -83,7 +83,7 @@ def sensor_data_generator(n):
 $$;
 
 -- Power data generator
-CREATE OR REPLACE FUNCTION generate_bronze_power_data(n INT DEFAULT 100)
+CREATE OR REPLACE FUNCTION bronze.generate_bronze_power_data(n INT DEFAULT 100)
 RETURNS VARIANT
 LANGUAGE PYTHON
 RUNTIME_VERSION = '3.11'
@@ -128,7 +128,7 @@ def power_data_generator(n):
 $$;
 
 -- Facility data generator
-CREATE OR REPLACE FUNCTION generate_bronze_facility_data(n INT DEFAULT 100)
+CREATE OR REPLACE FUNCTION bronze.generate_bronze_facility_data(n INT DEFAULT 100)
 RETURNS VARIANT
 LANGUAGE PYTHON
 RUNTIME_VERSION = '3.11'
@@ -173,30 +173,26 @@ $$;
 -- Insert 20,000 individual sensor records
 INSERT INTO bronze.sensor_raw (raw_payload)
 SELECT f.value
-FROM TABLE(FLATTEN(INPUT => generate_bronze_sensor_data(20000))) AS f;
+FROM TABLE(FLATTEN(INPUT => bronze.generate_bronze_sensor_data(20000))) AS f;
 
 -- Insert 20,000 individual power records
 INSERT INTO bronze.power_raw (raw_payload)
 SELECT f.value
-FROM TABLE(FLATTEN(INPUT => generate_bronze_power_data(20000))) AS f;
+FROM TABLE(FLATTEN(INPUT => bronze.generate_bronze_power_data(20000))) AS f;
 
 -- Insert 20,000 individual facility records
 INSERT INTO bronze.facility_raw (raw_payload)
 SELECT f.value
-FROM TABLE(FLATTEN(INPUT => generate_bronze_facility_data(20000))) AS f;
+FROM TABLE(FLATTEN(INPUT => bronze.generate_bronze_facility_data(20000))) AS f;
 
 -- ==========================================
 -- SILVER LAYER - Dynamic Silver Tables (Auto-Refreshing)
 -- ==========================================
 
-DROP TABLE silver.sensor_readings;
-DROP TABLE silver.power_data;
-DROP TABLE silver.facility_readings;
-
 -- Sensor Readings (Flattened from Bronze)
 CREATE OR REPLACE DYNAMIC TABLE silver.sensor_readings
   TARGET_LAG = '60 seconds'        -- Update the table every 10 seconds
-  WAREHOUSE = my_wh                 -- Warehouse used for refreshing
+  WAREHOUSE = HIPPO_WH                 -- Warehouse used for refreshing
   REFRESH_MODE = auto               -- Auto-refresh whenever underlying data changes
   INITIALIZE = on_create            -- Populate table immediately upon creation
 AS
@@ -212,7 +208,7 @@ FROM bronze.sensor_raw;
 -- Power Data (Flattened from Bronze)
 CREATE OR REPLACE DYNAMIC TABLE silver.power_data
   TARGET_LAG = '60 seconds'        -- Update every 10 seconds
-  WAREHOUSE = my_wh
+  WAREHOUSE = HIPPO_WH
   REFRESH_MODE = auto
   INITIALIZE = on_create
 AS
@@ -228,7 +224,7 @@ FROM bronze.power_raw;
 -- Facility Readings (Flattened from Bronze)
 CREATE OR REPLACE DYNAMIC TABLE silver.facility_readings
   TARGET_LAG = '60 seconds'        -- Update every 10 seconds
-  WAREHOUSE = my_wh
+  WAREHOUSE = HIPPO_WH
   REFRESH_MODE = auto
   INITIALIZE = on_create
 AS
@@ -257,21 +253,21 @@ CREATE OR REPLACE TABLE gold.dim_datacenter (
 
 CREATE OR REPLACE TABLE gold.dim_facility (
     facility_id STRING PRIMARY KEY,       -- Unique facility identifier
-    datacenter_id STRING REFERENCES dim_datacenter(datacenter_id), -- Parent datacenter link
+    datacenter_id STRING REFERENCES gold.dim_datacenter(datacenter_id), -- Parent datacenter link
     name STRING,                          -- Facility name
     floors INT                            -- Number of floors in facility
 );
 
 CREATE OR REPLACE TABLE gold.dim_rack (
     rack_id STRING PRIMARY KEY,           -- Unique rack identifier
-    facility_id STRING REFERENCES dim_facility(facility_id), -- Rack location in facility
+    facility_id STRING REFERENCES gold.dim_facility(facility_id), -- Rack location in facility
     position STRING,                      -- Rack position or row/column indicator
     capacity_kw FLOAT                     -- Rack max supported power (kW)
 );
 
 CREATE OR REPLACE TABLE gold.dim_sensor (
     sensor_id STRING PRIMARY KEY,         -- Unique sensor identifier
-    rack_id STRING REFERENCES dim_rack(rack_id), -- Associated rack
+    rack_id STRING REFERENCES gold.dim_rack(rack_id), -- Associated rack
     type STRING,                          -- Type (temperature, humidity)
     unit STRING,                          -- Measurement unit (°C, %)
     calibration_date DATE                 -- Last calibration date
@@ -311,7 +307,7 @@ VALUES
 -- Rack-level performance metrics
 CREATE OR REPLACE DYNAMIC TABLE gold.rack_performance
   TARGET_LAG = '60 seconds'       -- Update the table every 60 seconds
-  WAREHOUSE = my_wh
+  WAREHOUSE = HIPPO_WH
   REFRESH_MODE = auto
   INITIALIZE = on_create
 AS
@@ -336,7 +332,7 @@ GROUP BY r.facility_id, s.rack_id, DATE_TRUNC('hour', s.timestamp);
 -- Facility-level aggregated summary
 CREATE OR REPLACE DYNAMIC TABLE gold.facility_summary
   TARGET_LAG = '60 seconds'       -- Update the table every 60 seconds
-  WAREHOUSE = my_wh
+  WAREHOUSE = HIPPO_WH
   REFRESH_MODE = auto
   INITIALIZE = on_create
 AS
@@ -358,7 +354,7 @@ GROUP BY f.facility_id, DATE_TRUNC('hour', p.timestamp);
 -- Datacenter-level efficiency overview
 CREATE OR REPLACE DYNAMIC TABLE gold.datacenter_efficiency
   TARGET_LAG = '60 seconds'       -- Update the table every 60 seconds
-  WAREHOUSE = my_wh
+  WAREHOUSE = HIPPO_WH
   REFRESH_MODE = auto
   INITIALIZE = on_create
 AS
@@ -380,3 +376,5 @@ GROUP BY f.datacenter_id, DATE_TRUNC('day', p.timestamp);
 select * from gold.rack_performance order by time_window desc;
 select * from gold.facility_summary order by time_window desc;
 select * from gold.datacenter_efficiency order by time_window desc;
+
+
