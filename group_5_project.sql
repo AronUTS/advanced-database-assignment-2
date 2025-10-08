@@ -1,15 +1,16 @@
 -- ============================
--- Create Database For Project - Group 5
+-- Create Database and Schemas For Project - Group 5
 -- ============================
+
 CREATE DATABASE IF NOT EXISTS GROUP_5;
 USE DATABASE GROUP_5;
-
--- ============================
--- Create Bronze Table Statements
--- ============================
-
---Create schema - change this later
 CREATE SCHEMA IF NOT EXISTS bronze;
+CREATE SCHEMA IF NOT EXISTS silver;
+CREATE SCHEMA IF NOT EXISTS gold;
+
+-- ============================
+-- Create Bronze Layer
+-- ============================
 
 -- Bronze: Sensor Temperature/Humidity
 CREATE TABLE IF NOT EXISTS bronze.sensor_raw (
@@ -29,11 +30,6 @@ CREATE TABLE IF NOT EXISTS bronze.facility_raw (
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- TRUNCATE TABLE IF EXISTS bronze.sensor_raw;
--- TRUNCATE TABLE IF EXISTS bronze.power_raw;
--- TRUNCATE TABLE IF EXISTS bronze.facility_raw;
-
-
 -- ============================
 -- Bronze UDF Generators
 -- ============================
@@ -47,20 +43,21 @@ HANDLER = 'sensor_data_generator'
 AS
 $$
 import random
-from datetime import datetime, timedelta
+import time
 
 def sensor_data_generator(n):
     data = []
-    # Facility → Rack mapping
     facility_rack_map = {
         "F01": ["R001", "R002"],
         "F02": ["R003"],
         "F03": ["R004", "R005"]
     }
-
     sensor_ids = [f"S{i:03d}" for i in range(1, 11)]
     types = ["temperature", "humidity"]
     facilities = list(facility_rack_map.keys())
+
+    base_ts = int(time.time() * 1000) - 24*60*60*1000  # start 24h ago in ms
+    increment = 10_000  # 10 seconds per reading
 
     for i in range(n):
         facility_id = random.choice(facilities)
@@ -68,16 +65,9 @@ def sensor_data_generator(n):
         sensor_id = sensor_ids[i % len(sensor_ids)]
         sensor_type = random.choice(types)
 
-        # Synthetic values
-        if sensor_type == "temperature":
-            value = random.uniform(20, 35)
-            if rack_id == "R003":
-                value += 10
-        else:
-            value = random.uniform(30, 60)
+        value = random.uniform(20, 35) if sensor_type == "temperature" else random.uniform(30, 60)
 
-        # Random timestamp within last 24 hours
-        ts = datetime.utcnow() - timedelta(seconds=random.randint(0, 86400))
+        ts_ms = base_ts + i * increment
 
         payload = {
             "facility_id": facility_id,
@@ -86,12 +76,11 @@ def sensor_data_generator(n):
             "type": sensor_type,
             "unit": "C" if sensor_type == "temperature" else "%",
             "value": round(value, 2),
-            "timestamp": ts.isoformat()
+            "timestamp_ms": ts_ms
         }
         data.append(payload)
     return data
 $$;
-
 
 -- Power data generator
 CREATE OR REPLACE FUNCTION generate_bronze_power_data(n INT DEFAULT 100)
@@ -102,7 +91,7 @@ HANDLER = 'power_data_generator'
 AS
 $$
 import random
-from datetime import datetime, timedelta
+import time
 
 def power_data_generator(n):
     data = []
@@ -112,6 +101,9 @@ def power_data_generator(n):
         "F03": ["R004", "R005"]
     }
 
+    base_ts = int(time.time() * 1000) - 24*60*60*1000
+    increment = 10_000  # 10 seconds
+
     for i in range(n):
         facility_id = random.choice(list(facility_rack_map.keys()))
         rack_id = random.choice(facility_rack_map[facility_id])
@@ -120,7 +112,7 @@ def power_data_generator(n):
         current_a = round(power_kw * 1000 / voltage_v, 2)
         cooling_kw = random.uniform(2, 8)
 
-        ts = datetime.utcnow() - timedelta(seconds=random.randint(0, 86400))
+        ts_ms = base_ts + i * increment
 
         payload = {
             "facility_id": facility_id,
@@ -129,12 +121,11 @@ def power_data_generator(n):
             "voltage_v": voltage_v,
             "current_a": current_a,
             "cooling_kw": round(cooling_kw, 2),
-            "timestamp": ts.isoformat()
+            "timestamp_ms": ts_ms
         }
         data.append(payload)
     return data
 $$;
-
 
 -- Facility data generator
 CREATE OR REPLACE FUNCTION generate_bronze_facility_data(n INT DEFAULT 100)
@@ -145,11 +136,14 @@ HANDLER = 'facility_data_generator'
 AS
 $$
 import random
-from datetime import datetime, timedelta
+import time
 
 def facility_data_generator(n):
     data = []
     facility_ids = ["F01", "F02", "F03"]
+
+    base_ts = int(time.time() * 1000) - 24*60*60*1000
+    increment = 10_000  # 10 seconds per reading
 
     for i in range(n):
         facility_id = random.choice(facility_ids)
@@ -158,7 +152,7 @@ def facility_data_generator(n):
         weather_condition = "Normal" if external_temp_c < 40 else "Heat Alert"
         power_status = random.choice(["Normal", "Partial Outage", "Full Outage"])
 
-        ts = datetime.utcnow() - timedelta(seconds=random.randint(0, 86400))
+        ts_ms = base_ts + i * increment
 
         payload = {
             "facility_id": facility_id,
@@ -166,12 +160,11 @@ def facility_data_generator(n):
             "external_humidity": round(external_humidity, 2),
             "weather_condition": weather_condition,
             "power_status": power_status,
-            "timestamp": ts.isoformat()
+            "timestamp_ms": ts_ms
         }
         data.append(payload)
     return data
 $$;
-
 
 -- ============================
 -- Populate Bronze Tables with Generated Data
@@ -192,81 +185,60 @@ INSERT INTO bronze.facility_raw (raw_payload)
 SELECT f.value
 FROM TABLE(FLATTEN(INPUT => generate_bronze_facility_data(20000))) AS f;
 
-select * from bronze.facility_raw;
-
--- ============================
--- Example Bronze Layer Queries
--- ============================
-
--- Extract sensor data columns
-SELECT
-    raw_payload:"sensor_id"::STRING    AS sensor_id,
-    raw_payload:"rack_id"::STRING      AS rack_id,
-    raw_payload:"facility_id"::STRING  AS facility_id,
-    raw_payload:"type"::STRING         AS type,
-    raw_payload:"unit"::STRING         AS unit,
-    raw_payload:"value"::FLOAT         AS value,
-    timestamp
-FROM bronze.sensor_raw;
-
--- Extract power data columns
-SELECT
-    raw_payload:"rack_id"::STRING      AS rack_id,
-    raw_payload:"facility_id"::STRING  AS facility_id,
-    raw_payload:"power_kw"::FLOAT      AS power_kw,
-    raw_payload:"voltage_v"::FLOAT     AS voltage_v,
-    raw_payload:"current_a"::FLOAT     AS current_a,
-    raw_payload:"cooling_kw"::FLOAT    AS cooling_kw,
-    timestamp
-FROM bronze.power_raw;
-
--- Extract facility data columns
-SELECT
-    raw_payload:"facility_id"::STRING       AS facility_id,
-    raw_payload:"external_temp_c"::FLOAT    AS external_temp_c,
-    raw_payload:"external_humidity"::FLOAT  AS external_humidity,
-    raw_payload:"weather_condition"::STRING AS weather_condition,
-    raw_payload:"power_status"::STRING      AS power_status,
-    timestamp
-FROM bronze.facility_raw;
-
-
 -- ==========================================
--- SILVER LAYER
+-- SILVER LAYER - Dynamic Silver Tables (Auto-Refreshing)
 -- ==========================================
 
--- ------------------------------
--- Fact Tables (Flattened from Bronze)
--- ------------------------------
+DROP TABLE silver.sensor_readings;
+DROP TABLE silver.power_data;
+DROP TABLE silver.facility_readings;
 
-CREATE OR REPLACE TABLE silver.sensor_readings AS
+-- Sensor Readings (Flattened from Bronze)
+CREATE OR REPLACE DYNAMIC TABLE silver.sensor_readings
+  TARGET_LAG = '60 seconds'        -- Update the table every 10 seconds
+  WAREHOUSE = my_wh                 -- Warehouse used for refreshing
+  REFRESH_MODE = auto               -- Auto-refresh whenever underlying data changes
+  INITIALIZE = on_create            -- Populate table immediately upon creation
+AS
 SELECT
-    raw_payload:"sensor_id"::STRING  AS sensor_id,       -- Sensor providing reading
-    raw_payload:"rack_id"::STRING    AS rack_id,         -- Rack associated with the sensor
-    raw_payload:"type"::STRING       AS type,            -- Reading type (temperature/humidity)
-    raw_payload:"unit"::STRING       AS unit,            -- Measurement unit
-    raw_payload:"value"::FLOAT       AS value,           -- Recorded value
-    timestamp                        AS timestamp        -- Event timestamp
+    raw_payload:"sensor_id"::STRING   AS sensor_id,  -- Sensor providing reading
+    raw_payload:"rack_id"::STRING     AS rack_id,    -- Rack associated with the sensor
+    raw_payload:"type"::STRING        AS type,       -- Reading type (temperature/humidity)
+    raw_payload:"unit"::STRING        AS unit,       -- Measurement unit
+    raw_payload:"value"::FLOAT        AS value,      -- Recorded value
+    TO_TIMESTAMP_LTZ(raw_payload:"timestamp_ms"::BIGINT / 1000) AS timestamp  -- Event timestamp
 FROM bronze.sensor_raw;
 
-CREATE OR REPLACE TABLE silver.power_data AS
+-- Power Data (Flattened from Bronze)
+CREATE OR REPLACE DYNAMIC TABLE silver.power_data
+  TARGET_LAG = '60 seconds'        -- Update every 10 seconds
+  WAREHOUSE = my_wh
+  REFRESH_MODE = auto
+  INITIALIZE = on_create
+AS
 SELECT
-    raw_payload:"rack_id"::STRING    AS rack_id,         -- Rack consuming power
-    raw_payload:"power_kw"::FLOAT    AS power_kw,        -- Power usage (kW)
-    raw_payload:"voltage_v"::FLOAT   AS voltage_v,       -- Voltage supplied (V)
-    raw_payload:"current_a"::FLOAT   AS current_a,       -- Current drawn (A)
-    raw_payload:"cooling_kw"::FLOAT  AS cooling_kw,      -- Cooling system load (kW)
-    timestamp                        AS timestamp        -- Event timestamp
+    raw_payload:"rack_id"::STRING     AS rack_id,       -- Rack consuming power
+    raw_payload:"power_kw"::FLOAT     AS power_kw,      -- Power usage (kW)
+    raw_payload:"voltage_v"::FLOAT    AS voltage_v,     -- Voltage supplied (V)
+    raw_payload:"current_a"::FLOAT    AS current_a,     -- Current drawn (A)
+    raw_payload:"cooling_kw"::FLOAT   AS cooling_kw,    -- Cooling system load (kW)
+    TO_TIMESTAMP_LTZ(raw_payload:"timestamp_ms"::BIGINT / 1000) AS timestamp  -- Event timestamp
 FROM bronze.power_raw;
 
-CREATE OR REPLACE TABLE silver.facility_readings AS
+-- Facility Readings (Flattened from Bronze)
+CREATE OR REPLACE DYNAMIC TABLE silver.facility_readings
+  TARGET_LAG = '60 seconds'        -- Update every 10 seconds
+  WAREHOUSE = my_wh
+  REFRESH_MODE = auto
+  INITIALIZE = on_create
+AS
 SELECT
-    raw_payload:"facility_id"::STRING        AS facility_id,       -- Facility monitored
-    raw_payload:"external_temp_c"::FLOAT     AS external_temp_c,   -- Outside air temperature (°C)
-    raw_payload:"external_humidity"::FLOAT   AS external_humidity, -- Outside air humidity (%)
-    raw_payload:"weather_condition"::STRING  AS weather_condition, -- Weather descriptor
-    raw_payload:"power_status"::STRING       AS power_status,      -- Power status
-    timestamp                                AS timestamp          -- Event timestamp
+    raw_payload:"facility_id"::STRING        AS facility_id,        -- Facility monitored
+    raw_payload:"external_temp_c"::FLOAT     AS external_temp_c,    -- Outside air temperature (°C)
+    raw_payload:"external_humidity"::FLOAT   AS external_humidity,  -- Outside air humidity (%)
+    raw_payload:"weather_condition"::STRING  AS weather_condition,  -- Weather descriptor
+    raw_payload:"power_status"::STRING       AS power_status,       -- Power status
+    TO_TIMESTAMP_LTZ(raw_payload:"timestamp_ms"::BIGINT / 1000) AS timestamp  -- Event timestamp
 FROM bronze.facility_raw;
 
 -- ==========================================
@@ -331,10 +303,18 @@ VALUES
 ('R004', 'F03', 'C1', 10),
 ('R005', 'F03', 'C2', 12);
 
--- ------------------------------
+
+-- --------------------------------------
+-- Dynamic Gold Tables (Auto-Refreshing)
+-- --------------------------------------
+
 -- Rack-level performance metrics
--- ------------------------------
-CREATE OR REPLACE TABLE gold.rack_performance AS
+CREATE OR REPLACE DYNAMIC TABLE gold.rack_performance
+  TARGET_LAG = '60 seconds'       -- Update the table every 60 seconds
+  WAREHOUSE = my_wh
+  REFRESH_MODE = auto
+  INITIALIZE = on_create
+AS
 SELECT
     r.facility_id,                                     -- Facility containing the rack
     s.rack_id,                                         -- Rack being measured
@@ -353,10 +333,13 @@ JOIN gold.dim_rack r
   ON s.rack_id = r.rack_id
 GROUP BY r.facility_id, s.rack_id, DATE_TRUNC('hour', s.timestamp);
 
--- ------------------------------
 -- Facility-level aggregated summary
--- ------------------------------
-CREATE OR REPLACE TABLE gold.facility_summary AS
+CREATE OR REPLACE DYNAMIC TABLE gold.facility_summary
+  TARGET_LAG = '60 seconds'       -- Update the table every 60 seconds
+  WAREHOUSE = my_wh
+  REFRESH_MODE = auto
+  INITIALIZE = on_create
+AS
 SELECT
     f.facility_id,                                    -- Facility being monitored
     DATE_TRUNC('hour', p.timestamp) AS time_window,   -- Hourly aggregation window
@@ -367,16 +350,18 @@ SELECT
 FROM silver.power_data p
 JOIN gold.dim_rack r ON p.rack_id = r.rack_id
 JOIN gold.dim_facility f ON r.facility_id = f.facility_id
-LEFT JOIN silver_sensor_readings s 
+LEFT JOIN silver.sensor_readings s 
        ON s.rack_id = r.rack_id 
       AND DATE_TRUNC('hour', p.timestamp) = DATE_TRUNC('hour', s.timestamp)
 GROUP BY f.facility_id, DATE_TRUNC('hour', p.timestamp);
 
-
--- ------------------------------
 -- Datacenter-level efficiency overview
--- ------------------------------
-CREATE OR REPLACE TABLE gold.datacenter_efficiency AS
+CREATE OR REPLACE DYNAMIC TABLE gold.datacenter_efficiency
+  TARGET_LAG = '60 seconds'       -- Update the table every 60 seconds
+  WAREHOUSE = my_wh
+  REFRESH_MODE = auto
+  INITIALIZE = on_create
+AS
 SELECT
     f.datacenter_id,                                 -- Datacenter identifier
     DATE_TRUNC('day', p.timestamp) AS time_window,   -- Daily aggregation window
@@ -389,3 +374,9 @@ FROM silver.power_data p
 JOIN gold.dim_rack r ON p.rack_id = r.rack_id
 JOIN gold.dim_facility f ON r.facility_id = f.facility_id
 GROUP BY f.datacenter_id, DATE_TRUNC('day', p.timestamp);
+
+
+// Test get data from tables
+select * from gold.rack_performance order by time_window desc;
+select * from gold.facility_summary order by time_window desc;
+select * from gold.datacenter_efficiency order by time_window desc;
