@@ -54,21 +54,30 @@ def sensor_data_generator(n):
     }
     sensor_ids = [f"S{i:03d}" for i in range(1, 11)]
     types = ["temperature", "humidity"]
-    facilities = list(facility_rack_map.keys())
 
-    base_ts = int(time.time() * 1000) - 24*60*60*1000  # start 24h ago in ms
+    base_ts = int(time.time() * 1000) - 24*60*60*1000  # start 24h ago
     increment = 10_000  # 10 seconds per reading
 
     for i in range(n):
-        facility_id = random.choice(facilities)
-        rack_id = random.choice(facility_rack_map[facility_id])
+        # Create consistent cyclic assignment
+        facility_id = list(facility_rack_map.keys())[i % len(facility_rack_map)]
+        rack_id = facility_rack_map[facility_id][i % len(facility_rack_map[facility_id])]
         sensor_id = sensor_ids[i % len(sensor_ids)]
         sensor_type = random.choice(types)
 
-        value = random.uniform(20, 35) if sensor_type == "temperature" else random.uniform(30, 60)
+        # Inject "problem rack" with higher values
+        if rack_id == "R002":
+            if sensor_type == "temperature":
+                value = random.uniform(35, 45)   # High temp
+            else:
+                value = random.uniform(60, 80)   # High humidity
+        else:
+            if sensor_type == "temperature":
+                value = random.uniform(20, 30)
+            else:
+                value = random.uniform(30, 55)
 
         ts_ms = base_ts + i * increment
-
         payload = {
             "facility_id": facility_id,
             "rack_id": rack_id,
@@ -105,13 +114,20 @@ def power_data_generator(n):
     increment = 10_000  # 10 seconds
 
     for i in range(n):
-        facility_id = random.choice(list(facility_rack_map.keys()))
-        rack_id = random.choice(facility_rack_map[facility_id])
-        power_kw = random.uniform(5, 25)
+        # Cycle deterministically to reduce random variance
+        facility_id = list(facility_rack_map.keys())[i % len(facility_rack_map)]
+        rack_id = facility_rack_map[facility_id][i % len(facility_rack_map[facility_id])]
+
+        # "Problem rack" draws higher power and cooling
+        if rack_id == "R002":
+            power_kw = random.uniform(22, 30)
+            cooling_kw = random.uniform(8, 12)
+        else:
+            power_kw = random.uniform(10, 20)
+            cooling_kw = random.uniform(3, 6)
+
         voltage_v = 230
         current_a = round(power_kw * 1000 / voltage_v, 2)
-        cooling_kw = random.uniform(2, 8)
-
         ts_ms = base_ts + i * increment
 
         payload = {
@@ -146,14 +162,30 @@ def facility_data_generator(n):
     increment = 10_000  # 10 seconds per reading
 
     for i in range(n):
-        facility_id = random.choice(facility_ids)
-        external_temp_c = random.uniform(20, 45)
-        external_humidity = random.uniform(30, 70)
-        weather_condition = "Normal" if external_temp_c < 40 else "Heat Alert"
-        power_status = random.choice(["Normal", "Partial Outage", "Full Outage"])
+        # Cycle deterministically
+        facility_id = facility_ids[i % len(facility_ids)]
+
+        # Inject environmental stress for F01
+        if facility_id == "F01":
+            # 15% chance of heatwave event
+            if random.random() < 0.15:
+                external_temp_c = random.uniform(40, 50)      # Very hot
+                external_humidity = random.uniform(70, 90)    # Very humid
+                weather_condition = "Heat Alert"
+                power_status = random.choice(["Normal", "Partial Outage"])
+            else:
+                external_temp_c = random.uniform(30, 38)
+                external_humidity = random.uniform(50, 70)
+                weather_condition = "Normal"
+                power_status = "Normal"
+        else:
+            # Normal weather for other facilities
+            external_temp_c = random.uniform(20, 30)
+            external_humidity = random.uniform(30, 60)
+            weather_condition = "Normal"
+            power_status = "Normal"
 
         ts_ms = base_ts + i * increment
-
         payload = {
             "facility_id": facility_id,
             "external_temp_c": round(external_temp_c, 2),
@@ -165,6 +197,7 @@ def facility_data_generator(n):
         data.append(payload)
     return data
 $$;
+
 
 -- ============================
 -- Populate Bronze Tables with Generated Data
