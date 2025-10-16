@@ -62,6 +62,12 @@ def sensor_data_generator(n):
         rack_id = facility_rack_map[facility_id][i % len(facility_rack_map[facility_id])]
         sensor_id = sensor_ids[i % len(sensor_ids)]
 
+        # Randomly generate sensor status with weighted probabilities
+        sensor_status = random.choices(
+            ['WARNING', 'FAULT', 'Offline', 'Normal'],
+            weights=[3.5, 3.5, 7.0, 86.0]
+        )[0]
+
         # Generate BOTH temperature and humidity for each sensor
         for sensor_type in ["temperature", "humidity"]:
             # Problem rack logic
@@ -81,6 +87,7 @@ def sensor_data_generator(n):
                 "facility_id": facility_id,
                 "rack_id": rack_id,
                 "sensor_id": sensor_id,
+                "status": sensor_status,
                 "type": sensor_type,
                 "unit": "C" if sensor_type == "temperature" else "%",
                 "value": round(value, 2),
@@ -249,10 +256,12 @@ SELECT
     raw_payload:"sensor_id"::STRING   AS sensor_id,  -- Sensor providing reading
     raw_payload:"rack_id"::STRING     AS rack_id,    -- Rack associated with the sensor
     raw_payload:"type"::STRING        AS type,       -- Reading type (temperature/humidity)
+    raw_payload:"status"::STRING      AS status,     -- Sensor status (Normal/Warning/Fault/Offline)
     raw_payload:"unit"::STRING        AS unit,       -- Measurement unit
     raw_payload:"value"::FLOAT        AS value,      -- Recorded value
     TO_TIMESTAMP_LTZ(raw_payload:"timestamp_ms"::BIGINT / 1000) AS timestamp  -- Event timestamp
-FROM bronze.sensor_raw;
+FROM bronze.sensor_raw
+WHERE raw_payload:"status"::STRING = 'Normal';  -- Filter out offline sensors
 
 -- Power Data (Flattened from Bronze)
 CREATE OR REPLACE DYNAMIC TABLE silver.power_data
