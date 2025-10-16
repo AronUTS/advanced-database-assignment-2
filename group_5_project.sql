@@ -92,7 +92,7 @@ def sensor_data_generator(n):
 $$;
 
 -- Power data generator
-CREATE OR REPLACE FUNCTION bronze.generate_bronze_power_data(n INT DEFAULT 100)
+CREATE OR REPLACE FUNCTION generate_bronze_power_data(n INT DEFAULT 100)
 RETURNS VARIANT
 LANGUAGE PYTHON
 RUNTIME_VERSION = '3.11'
@@ -100,46 +100,63 @@ HANDLER = 'power_data_generator'
 AS
 $$
 import random
-import time
+from datetime import datetime, timedelta
 
 def power_data_generator(n):
     data = []
+
     facility_rack_map = {
         "F01": ["R001", "R002"],
         "F02": ["R003"],
         "F03": ["R004", "R005"]
     }
 
-    base_ts = int(time.time() * 1000) - 24*60*60*1000
-    increment = 10_000  # 10 seconds
+    # Define base power draw and modifiers
+    base_power_per_rack = {
+        "R001": 12.0,
+        "R002": 14.0,
+        "R003": 10.0,
+        "R004": 9.0,
+        "R005": 11.0
+    }
+
+    # Facility efficiency modifiers (cooling + infrastructure overhead)
+    facility_efficiency = {
+        "F01": 1.05,
+        "F02": 1.15,
+        "F03": 1.10
+    }
 
     for i in range(n):
-        # Cycle deterministically to reduce random variance
-        facility_id = list(facility_rack_map.keys())[i % len(facility_rack_map)]
-        rack_id = facility_rack_map[facility_id][i % len(facility_rack_map[facility_id])]
+        facility_id = random.choice(list(facility_rack_map.keys()))
+        racks = facility_rack_map[facility_id]
+        racks_active = random.randint(1, len(racks))  # simulate racks online
+        avg_base = sum(base_power_per_rack[r] for r in racks[:racks_active]) / racks_active
 
-        # "Problem rack" draws higher power and cooling
-        if rack_id == "R002":
-            power_kw = random.uniform(22, 30)
-            cooling_kw = random.uniform(8, 12)
-        else:
-            power_kw = random.uniform(10, 20)
-            cooling_kw = random.uniform(3, 6)
+        # Correlate power to number of active racks (+/- noise)
+        total_power = avg_base * racks_active * facility_efficiency[facility_id]
+        total_power += random.uniform(-3, 3)  # introduce some noise
+
+        # Cooling increases slightly with power
+        cooling_kw = total_power * random.uniform(0.25, 0.35)
 
         voltage_v = 230
-        current_a = round(power_kw * 1000 / voltage_v, 2)
-        ts_ms = base_ts + i * increment
+        current_a = round(total_power * 1000 / voltage_v, 2)
+
+        ts = datetime.utcnow() - timedelta(seconds=random.randint(0, 86400))
 
         payload = {
             "facility_id": facility_id,
-            "rack_id": rack_id,
-            "power_kw": round(power_kw, 2),
+            "racks_active": racks_active,
+            "power_kw": round(total_power, 2),
             "voltage_v": voltage_v,
             "current_a": current_a,
             "cooling_kw": round(cooling_kw, 2),
-            "timestamp_ms": ts_ms
+            "timestamp": ts.isoformat()
         }
+
         data.append(payload)
+
     return data
 $$;
 
