@@ -69,6 +69,7 @@ SELECT
     TO_TIMESTAMP_LTZ(raw_payload:"timestamp_ms"::BIGINT / 1000) AS timestamp  -- Event timestamp
 FROM bronze.facility_raw;
 
+
 -- Rack-level performance metrics
 CREATE OR REPLACE DYNAMIC TABLE gold.rack_performance
   TARGET_LAG = '60 seconds'       -- Update the table every 60 seconds
