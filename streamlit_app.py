@@ -147,7 +147,7 @@ tab1, tab2, tab3 = st.tabs([
 # --- TAB 1: Datacenter Efficiency ---
 with tab1:
     with st.expander("Filters", expanded=True):
-        query_dc = "SELECT * FROM MACKEREL_DB.GOLD.DATACENTER_EFFICIENCY ORDER BY TIME_WINDOW"
+        query_dc = "SELECT * FROM GROUP_5.GOLD.DATACENTER_EFFICIENCY ORDER BY TIME_WINDOW"
         df_dc = session.sql(query_dc).to_pandas()
         df_dc["TIME_WINDOW"] = pd.to_datetime(df_dc["TIME_WINDOW"]).dt.tz_localize(None)
 
@@ -184,8 +184,8 @@ with tab2:
                 f.RACKS_ACTIVE,
                 f.PUE,
                 d.DATACENTER_ID
-            FROM MACKEREL_DB.GOLD.FACILITY_SUMMARY f
-            JOIN MACKEREL_DB.GOLD.DIM_FACILITY d
+            FROM GROUP_5.GOLD.FACILITY_SUMMARY f
+            JOIN GROUP_5.GOLD.DIM_FACILITY d
               ON f.FACILITY_ID = d.FACILITY_ID
             ORDER BY f.TIME_WINDOW
         """
@@ -266,50 +266,60 @@ with tab2:
 
     st.divider()
 
-
-    # =================================================
-    # 3. Average Power per Rack vs Temperature (Normalised Comparison)
+   # =================================================
+    # 3. Average Power per Rack vs Temperature 
     # =================================================
     st.markdown("### Average Power per Rack vs Temperature (Hourly Trend)")
-
-    # Normalize total power by racks to remove facility size bias
+    
+    # Calculate normalized power per rack to remove facility size bias
     df_fac["AVG_POWER_PER_RACK"] = df_fac["TOTAL_POWER_KW"] / df_fac["RACKS_ACTIVE"].replace(0, pd.NA)
-
-    # Consistent color scale (F01, F02, F03)
+    
+    # Define consistent color scale
     color_scale = alt.Scale(
         domain=["F01", "F02", "F03"],
         range=["#1f77b4", "#ff7f0e", "#2ca02c"]
     )
-
-    # Hide legends if only one facility is selected
+    
+    # Hide legends when only one facility is selected
     show_legend = len(df_fac["FACILITY_ID"].unique()) > 1
-    legend_power = alt.Legend(title="Facility (Power)", orient="bottom") if show_legend else None
+    legend_power = alt.Legend(title="Facility (Power per Rack)", orient="bottom") if show_legend else None
     legend_temp = alt.Legend(title="Facility (Temperature)", orient="bottom") if show_legend else None
-
-    # Power per rack chart
+    
+    # --- Power per Rack Chart (solid line) ---
     power_chart = (
         alt.Chart(df_fac)
-        .mark_line(point=True)
+        .mark_line(point=True, strokeWidth=2)
         .encode(
             x=alt.X("TIME_WINDOW:T", title="Time"),
-            y=alt.Y("AVG_POWER_PER_RACK:Q", title="Average Power per Rack (kW)"),
+            y=alt.Y(
+                "AVG_POWER_PER_RACK:Q",
+                title="Average Power per Rack (kW)",
+                scale=alt.Scale(domain=[df_fac["AVG_POWER_PER_RACK"].min() * 0.9,
+                                        df_fac["AVG_POWER_PER_RACK"].max() * 1.05]),
+            ),
             color=alt.Color("FACILITY_ID:N", scale=color_scale, legend=legend_power),
             tooltip=[
                 alt.Tooltip("FACILITY_ID", title="Facility"),
                 alt.Tooltip("TIME_WINDOW:T", title="Timestamp"),
-                alt.Tooltip("AVG_POWER_PER_RACK:Q", title="Power per Rack (kW)", format=".2f"),
+                alt.Tooltip("AVG_POWER_PER_RACK:Q", title="Avg Power per Rack (kW)", format=".2f"),
                 alt.Tooltip("AVG_TEMP_C:Q", title="Temperature (°C)", format=".2f"),
             ],
         )
     )
-
-    # Temperature chart
+    
+    # --- Temperature Chart (dashed orange line) ---
     temp_chart = (
         alt.Chart(df_fac)
-        .mark_line(strokeDash=[5, 3], opacity=0.9)
+        .mark_line(strokeDash=[5, 3], opacity=0.8)
         .encode(
             x=alt.X("TIME_WINDOW:T", title="Time"),
-            y=alt.Y("AVG_TEMP_C:Q", title="Temperature (°C)", axis=alt.Axis(labelColor="orange")),
+            y=alt.Y(
+                "AVG_TEMP_C:Q",
+                title="Temperature (°C)",
+                scale=alt.Scale(domain=[df_fac["AVG_TEMP_C"].min() - 1,
+                                        df_fac["AVG_TEMP_C"].max() + 1]),
+                axis=alt.Axis(labelColor="orange"),
+            ),
             color=alt.Color("FACILITY_ID:N", scale=color_scale, legend=legend_temp),
             tooltip=[
                 alt.Tooltip("FACILITY_ID", title="Facility"),
@@ -318,26 +328,28 @@ with tab2:
             ],
         )
     )
-
+    
+    # Combine both charts
     combined_chart = (
         alt.layer(power_chart, temp_chart)
         .resolve_scale(y="independent")
         .configure_legend(
             orient="bottom",
             labelFontSize=12,
-            titleFontSize=9
+            titleFontSize=10
         )
-        .properties(height=400)  # ⬅ add height so legend fits
+        .properties(height=400)
     )
-
+    
     st.altair_chart(combined_chart, use_container_width=True)
-
+    
     st.markdown("""
     **Interpretation:**  
-    - This chart compares average rack power intensity and temperature by facility.  
-    - Power is normalized per active rack to remove size bias.  
-    - The legend is positioned below for a clearer layout when comparing multiple facilities.
+    - Power is now normalized per active rack to remove bias from facility size.  
+    - Dynamic scaling ensures temperature and power axes are visually balanced.  
+    - Increases in both metrics may indicate reduced cooling efficiency, while stable temperature despite higher power shows strong environmental control.
     """)
+    
 
 
     st.divider()
@@ -452,7 +464,7 @@ with tab3:
     # -------------------------------------------------
     # Load Data
     # -------------------------------------------------
-    query_rack = "SELECT * FROM MACKEREL_DB.GOLD.RACK_PERFORMANCE ORDER BY TIME_WINDOW"
+    query_rack = "SELECT * FROM GROUP_5.GOLD.RACK_PERFORMANCE ORDER BY TIME_WINDOW"
     df_rack = session.sql(query_rack).to_pandas()
     df_rack["TIME_WINDOW"] = pd.to_datetime(df_rack["TIME_WINDOW"]).dt.tz_localize(None)
 
@@ -473,9 +485,9 @@ with tab3:
     # -------------------------------------------------
     # 2. Anomaly Alerts
     # -------------------------------------------------
-    st.markdown("### Anomaly Alerts (Temperature > 30°C or Efficiency < 0.75)")
+    st.markdown("### Anomaly Alerts (Temperature > 30°C or Efficiency < 0.62)")
     alerts = df_rack_filtered[
-        (df_rack_filtered["AVG_TEMP_C"] > 30) | (df_rack_filtered["EFFICIENCY"] < 0.75)
+        (df_rack_filtered["AVG_TEMP_C"] > 30) | (df_rack_filtered["EFFICIENCY"] < 0.62)
     ][["FACILITY_ID", "RACK_ID", "TIME_WINDOW", "AVG_TEMP_C", "EFFICIENCY", "PUE"]]
 
     if len(alerts) > 0:
