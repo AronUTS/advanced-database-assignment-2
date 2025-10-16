@@ -130,7 +130,7 @@ def power_data_generator(n):
     for i in range(n):
         facility_id = random.choice(list(facility_rack_map.keys()))
         racks = facility_rack_map[facility_id]
-        racks_active = random.randint(1, len(racks))  # simulate racks online
+        racks_active = len(racks) // get active racks to help scale power output by rack
         avg_base = sum(base_power_per_rack[r] for r in racks[:racks_active]) / racks_active
 
         # Correlate power to number of active racks (+/- noise)
