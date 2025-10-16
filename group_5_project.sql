@@ -50,46 +50,50 @@ def sensor_data_generator(n):
         "F03": ["R004", "R005"]
     }
     sensor_ids = [f"S{i:03d}" for i in range(1, 11)]
-    types = ["temperature", "humidity"]
 
     base_ts = int(time.time() * 1000) - 24*60*60*1000  # start 24h ago
     increment = 10_000  # 10 seconds per reading
 
+    record_counter = 0
+
     for i in range(n):
-        # Create consistent cyclic assignment
+        # Consistent cyclic assignment
         facility_id = list(facility_rack_map.keys())[i % len(facility_rack_map)]
         rack_id = facility_rack_map[facility_id][i % len(facility_rack_map[facility_id])]
         sensor_id = sensor_ids[i % len(sensor_ids)]
-        sensor_type = random.choice(types)
 
-        # Inject "problem rack" with higher values
-        if rack_id == "R002":
-            if sensor_type == "temperature":
-                value = random.uniform(35, 45)   # High temp
+        # Generate BOTH temperature and humidity for each sensor
+        for sensor_type in ["temperature", "humidity"]:
+            # Problem rack logic
+            if rack_id == "R002":
+                if sensor_type == "temperature":
+                    value = random.uniform(35, 45)
+                else:
+                    value = random.uniform(60, 80)
             else:
-                value = random.uniform(60, 80)   # High humidity
-        else:
-            if sensor_type == "temperature":
-                value = random.uniform(20, 30)
-            else:
-                value = random.uniform(30, 55)
+                if sensor_type == "temperature":
+                    value = random.uniform(20, 30)
+                else:
+                    value = random.uniform(30, 55)
 
-        ts_ms = base_ts + i * increment
-        payload = {
-            "facility_id": facility_id,
-            "rack_id": rack_id,
-            "sensor_id": sensor_id,
-            "type": sensor_type,
-            "unit": "C" if sensor_type == "temperature" else "%",
-            "value": round(value, 2),
-            "timestamp_ms": ts_ms
-        }
-        data.append(payload)
+            ts_ms = base_ts + record_counter * increment
+            payload = {
+                "facility_id": facility_id,
+                "rack_id": rack_id,
+                "sensor_id": sensor_id,
+                "type": sensor_type,
+                "unit": "C" if sensor_type == "temperature" else "%",
+                "value": round(value, 2),
+                "timestamp_ms": ts_ms
+            }
+            data.append(payload)
+            record_counter += 1
+
     return data
 $$;
 
 -- Power data generator
-CREATE OR REPLACE FUNCTION generate_bronze_power_data(n INT DEFAULT 100)
+CREATE OR REPLACE FUNCTION bronze.generate_bronze_power_data(n INT DEFAULT 100)
 RETURNS VARIANT
 LANGUAGE PYTHON
 RUNTIME_VERSION = '3.11'
@@ -108,7 +112,6 @@ def power_data_generator(n):
         "F03": ["R004", "R005"]
     }
 
-    # Define base power draw and modifiers
     base_power_per_rack = {
         "R001": 12.0,
         "R002": 14.0,
@@ -117,7 +120,6 @@ def power_data_generator(n):
         "R005": 11.0
     }
 
-    # Facility efficiency modifiers (cooling + infrastructure overhead)
     facility_efficiency = {
         "F01": 1.05,
         "F02": 1.15,
@@ -125,34 +127,34 @@ def power_data_generator(n):
     }
 
     for i in range(n):
+        # Randomly select a facility
         facility_id = random.choice(list(facility_rack_map.keys()))
         racks = facility_rack_map[facility_id]
-        racks_active = len(racks) # get active racks to help scale power output by rack
-        avg_base = sum(base_power_per_rack[r] for r in racks[:racks_active]) / racks_active
 
-        # Correlate power to number of active racks (+/- noise)
-        total_power = avg_base * racks_active * facility_efficiency[facility_id]
-        total_power += random.uniform(-3, 3)  # introduce some noise
+        for rack_id in racks:
+            # Power per rack scaled by efficiency
+            total_power_kw = base_power_per_rack[rack_id] * facility_efficiency[facility_id]
+            # Add small noise for realism
+            total_power_kw *= random.uniform(0.95, 1.05)
 
-        # Cooling increases slightly with power
-        cooling_kw = total_power * random.uniform(0.25, 0.35)
+            cooling_kw = total_power_kw * random.uniform(0.25, 0.35)
+            voltage_v = 230
+            current_a = round(total_power_kw * 1000 / voltage_v, 2)
 
-        voltage_v = 230
-        current_a = round(total_power * 1000 / voltage_v, 2)
+            ts = datetime.utcnow() - timedelta(seconds=random.randint(0, 86400))
 
-        ts = datetime.utcnow() - timedelta(seconds=random.randint(0, 86400))
+            payload = {
+                "facility_id": facility_id,
+                "rack_id": rack_id,
+                "racks_active": len(racks),
+                "power_kw": round(total_power_kw, 2),
+                "voltage_v": voltage_v,
+                "current_a": current_a,
+                "cooling_kw": round(cooling_kw, 2),
+                "timestamp": ts.isoformat()
+            }
 
-        payload = {
-            "facility_id": facility_id,
-            "racks_active": racks_active,
-            "power_kw": round(total_power, 2),
-            "voltage_v": voltage_v,
-            "current_a": current_a,
-            "cooling_kw": round(cooling_kw, 2),
-            "timestamp": ts.isoformat()
-        }
-
-        data.append(payload)
+            data.append(payload)
 
     return data
 $$;
