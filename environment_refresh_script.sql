@@ -105,7 +105,7 @@ AS
 SELECT
     f.facility_id,                                    -- Facility being monitored
     DATE_TRUNC('hour', p.timestamp) AS time_window,   -- Hourly aggregation window
-    SUM(p.power_kw) AS total_power_kw,                -- Total power consumption
+    AVG(p.power_kw) * COUNT(DISTINCT p.rack_id) AS total_power_kw,                -- Total power consumption
     AVG(CASE WHEN s.type = 'temperature' THEN s.value END) AS avg_temp_c, -- Avg temperature
     COUNT(DISTINCT p.rack_id) AS racks_active,        -- Number of active racks
     (SUM(p.power_kw) + SUM(p.cooling_kw)) / NULLIF(SUM(p.power_kw),0) AS pue  -- Facility-level PUE
