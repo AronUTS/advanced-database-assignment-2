@@ -83,6 +83,11 @@ def sensor_data_generator(n):
                     value = random.uniform(30, 55)
 
             ts_ms = base_ts + record_counter * increment
+            value = round(value, 2);
+
+            if sensor_status != "Normal":
+                value = 0.0  # Faulty reading for non-normal status
+            
             payload = {
                 "facility_id": facility_id,
                 "rack_id": rack_id,
