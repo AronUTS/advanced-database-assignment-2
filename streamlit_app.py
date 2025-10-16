@@ -427,7 +427,7 @@ with tab2:
     # -------------------------------------------------
     st.markdown("### PUE Efficiency Reference Table")
     pue_reference = pd.DataFrame({
-        "PUE Range": ["< 1.3", "1.3 – 1.6", "1.6 – 2.0", "> 2.0"],
+        "PUE Range": ["< 1.3", "1.3 – 1.6", "1.6 – 2.0", "more than 2.0"],
         "Efficiency Level": ["Excellent", "Good", "Moderate", "Poor"],
         "Description": [
             "State-of-the-art efficiency; minimal cooling overhead",
@@ -532,30 +532,81 @@ with tab3:
     # 5. Charts & Analysis
     # -------------------------------------------------
     st.markdown("### Temperature Trend by Rack")
+    
+    # --- Dynamic temperature scaling ---
+    temp_min = float(df_fac_filtered["AVG_TEMP_C"].min()) if len(df_fac_filtered) else 0.0
+    temp_max = float(df_fac_filtered["AVG_TEMP_C"].max()) if len(df_fac_filtered) else 1.0
+    
     chart_temp = (
         alt.Chart(df_fac_filtered)
         .mark_line(point=True)
         .encode(
-            x="TIME_WINDOW:T",
-            y="AVG_TEMP_C:Q",
-            color="RACK_ID:N",
-            tooltip=["FACILITY_ID", "RACK_ID", "TIME_WINDOW", "AVG_TEMP_C"],
+            x=alt.X("TIME_WINDOW:T", title="Time"),
+            y=alt.Y(
+                "AVG_TEMP_C:Q",
+                title="Temperature (°C)",
+                scale=alt.Scale(domain=[temp_min - 1, temp_max + 1]),
+                axis=alt.Axis(labelColor="orange")
+            ),
+            color=alt.Color("RACK_ID:N", legend=alt.Legend(title="Rack")),
+            tooltip=[
+                alt.Tooltip("FACILITY_ID", title="Facility"),
+                alt.Tooltip("RACK_ID", title="Rack"),
+                alt.Tooltip("TIME_WINDOW:T", title="Timestamp"),
+                alt.Tooltip("AVG_TEMP_C:Q", title="Temperature (°C)", format=".2f"),
+            ],
         )
     )
+    
     st.altair_chart(chart_temp, use_container_width=True)
-
-    st.markdown("### Efficiency Comparison by Rack")
-    chart_eff = (
+    
+    st.markdown("""
+    **Interpretation:**  
+    The dynamic axis ensures temperature changes between racks are visible.  
+    If one rack shows consistently higher temperatures, it could indicate airflow obstruction or cooling imbalance.
+    """)
+    
+    st.divider()
+        
+    # -------------------------------------------------
+    # Efficiency Trend per Rack 
+    # -------------------------------------------------
+    st.markdown("### Efficiency Trend by Rack")
+    
+    # Dynamic scaling for efficiency axis
+    eff_min = float(df_fac_filtered["EFFICIENCY"].min()) if len(df_fac_filtered) else 0.0
+    eff_max = float(df_fac_filtered["EFFICIENCY"].max()) if len(df_fac_filtered) else 1.0
+    
+    chart_eff_trend = (
         alt.Chart(df_fac_filtered)
-        .mark_bar()
+        .mark_line(point=True, strokeWidth=2)
         .encode(
-            x="RACK_ID:N",
-            y="mean(EFFICIENCY):Q",
-            color="FACILITY_ID:N",
-            tooltip=["RACK_ID", "mean(EFFICIENCY):Q", "FACILITY_ID"],
+            x=alt.X("TIME_WINDOW:T", title="Time"),
+            y=alt.Y(
+                "EFFICIENCY:Q",
+                title="Efficiency",
+                scale=alt.Scale(domain=[eff_min - 0.05, eff_max + 0.05]),
+            ),
+            color=alt.Color("RACK_ID:N", legend=alt.Legend(title="Rack")),
+            tooltip=[
+                alt.Tooltip("FACILITY_ID", title="Facility"),
+                alt.Tooltip("RACK_ID", title="Rack"),
+                alt.Tooltip("TIME_WINDOW:T", title="Timestamp"),
+                alt.Tooltip("EFFICIENCY:Q", title="Efficiency", format=".2f"),
+            ],
         )
+        .properties(height=400)
+        .interactive()
     )
-    st.altair_chart(chart_eff, use_container_width=True)
+    
+    st.altair_chart(chart_eff_trend, use_container_width=True)
+    
+    st.markdown("""
+    **Interpretation:**  
+    This dynamically scaled efficiency trend chart highlights subtle performance variations between racks.  
+    A consistent downward slope or sudden drop in efficiency indicates localized energy imbalance,  
+    possible hardware degradation, or cooling system inefficiency for that rack.
+    """)
 
 
 
