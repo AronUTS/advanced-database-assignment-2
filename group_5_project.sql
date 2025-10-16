@@ -14,20 +14,17 @@ CREATE SCHEMA IF NOT EXISTS gold;
 
 -- Bronze: Sensor Temperature/Humidity
 CREATE TABLE IF NOT EXISTS bronze.sensor_raw (
-    raw_payload VARIANT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    raw_payload VARIANT
 );
 
 -- Bronze: Power Consumption
 CREATE TABLE IF NOT EXISTS bronze.power_raw (
-    raw_payload VARIANT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    raw_payload VARIANT
 );
 
 -- Bronze: Facility External Sensors
 CREATE TABLE IF NOT EXISTS bronze.facility_raw (
-    raw_payload VARIANT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    raw_payload VARIANT
 );
 
 -- ============================
