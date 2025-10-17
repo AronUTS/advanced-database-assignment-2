@@ -290,7 +290,11 @@ with tab2:
         alt.Chart(df_fac)
         .mark_line(point=True, strokeWidth=2)
         .encode(
-            x=alt.X("TIME_WINDOW:T", title="Time"),
+            x=alt.X(
+            "TIME_WINDOW:T",
+            title="Time",
+            axis=alt.Axis(format="%b %d")
+        ),
             y=alt.Y(
                 "AVG_POWER_PER_RACK:Q",
                 title="Average Power per Rack (kW)",
@@ -312,7 +316,11 @@ with tab2:
         alt.Chart(df_fac)
         .mark_line(strokeDash=[5, 3], opacity=0.8)
         .encode(
-            x=alt.X("TIME_WINDOW:T", title="Time"),
+            x=alt.X(
+            "TIME_WINDOW:T",
+            title="Time",
+            axis=alt.Axis(format="%b %d")
+        ),
             y=alt.Y(
                 "AVG_TEMP_C:Q",
                 title="Temperature (°C)",
@@ -541,7 +549,11 @@ with tab3:
         alt.Chart(df_fac_filtered)
         .mark_line(point=True)
         .encode(
-            x=alt.X("TIME_WINDOW:T", title="Time"),
+            x=alt.X(
+            "TIME_WINDOW:T",
+            title="Time",
+            axis=alt.Axis(format="%b %d")
+        ),
             y=alt.Y(
                 "AVG_TEMP_C:Q",
                 title="Temperature (°C)",
@@ -581,7 +593,11 @@ with tab3:
         alt.Chart(df_fac_filtered)
         .mark_line(point=True, strokeWidth=2)
         .encode(
-            x=alt.X("TIME_WINDOW:T", title="Time"),
+            x=alt.X(
+            "TIME_WINDOW:T",
+            title="Time",
+            axis=alt.Axis(format="%b %d")
+        ),
             y=alt.Y(
                 "EFFICIENCY:Q",
                 title="Efficiency",
