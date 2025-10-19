@@ -499,25 +499,7 @@ with tab3:
     else:
         st.success("✅ No broken sensor readings detected.")
 
-    
-    # -------------------------------------------------
-    # 3. KPI Summary Table by Facility
-    # -------------------------------------------------
-    st.markdown("### Facility Performance Summary (Aggregated KPIs)")
-    kpi_summary = (
-        df_rack_filtered.groupby("FACILITY_ID")
-        .agg(
-            avg_temp=("AVG_TEMP_C", "mean"),
-            avg_power=("AVG_POWER_KW", "mean"),
-            avg_eff=("EFFICIENCY", "mean"),
-            avg_pue=("PUE", "mean")
-        )
-        .reset_index()
-    )
-    kpi_summary.columns = ["Facility ID", "Avg Temp (°C)", "Avg Power (kW)", "Avg Efficiency", "Avg PUE"]
 
-    st.dataframe(kpi_summary.round(3), use_container_width=True)
-    st.divider()
 
     # -------------------------------------------------
     # 4. Facility Filter (for remaining visualizations)
