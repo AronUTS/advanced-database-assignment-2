@@ -405,30 +405,6 @@ with tab2:
     st.markdown(f"**Target PUE Benchmark:** {target_pue} (Lower is better)")
     st.divider()
 
-    # -------------------------------------------------
-    # Facility Efficiency Rating (based on current data)
-    # -------------------------------------------------
-    def classify_efficiency(pue):
-        if pue < 1.3:
-            return "Excellent"
-        elif pue < 1.6:
-            return "Good"
-        elif pue < 2.0:
-            return "Moderate"
-        else:
-            return "Poor"
-
-    pue_summary["Efficiency Rating"] = pue_summary["avg_pue"].apply(classify_efficiency)
-
-    st.markdown("### Facility Efficiency Rating Table (Based on Current Data)")
-    st.dataframe(
-        pue_summary.rename(columns={"FACILITY_ID": "Facility", "avg_pue": "Average PUE"})
-        .reset_index(drop=True)
-        .style.format({"Average PUE": "{:.2f}"}),
-        use_container_width=True,
-    )
-
-    st.divider()
 
     # -------------------------------------------------
     # PUE Efficiency Standards Reference
@@ -493,9 +469,9 @@ with tab3:
     # -------------------------------------------------
     # 2. Anomaly Alerts
     # -------------------------------------------------
-    st.markdown("### Anomaly Alerts (Temperature > 30°C or Efficiency < 0.62)")
+    st.markdown("### Anomaly Alerts (Temperature > 41°C or Efficiency < 0.65)")
     alerts = df_rack_filtered[
-        (df_rack_filtered["AVG_TEMP_C"] > 30) | (df_rack_filtered["EFFICIENCY"] < 0.62)
+        (df_rack_filtered["AVG_TEMP_C"] > 41) | (df_rack_filtered["EFFICIENCY"] < 0.69)
     ][["FACILITY_ID", "RACK_ID", "TIME_WINDOW", "AVG_TEMP_C", "EFFICIENCY", "PUE"]]
 
     if len(alerts) > 0:
@@ -505,6 +481,25 @@ with tab3:
 
     st.divider()
 
+    broken_sensors = df_rack_filtered[
+    (df_rack_filtered["AVG_TEMP_C"] == 0)
+    | (df_rack_filtered["AVG_POWER_KW"] == 0)
+    | (df_rack_filtered["EFFICIENCY"] == 0)
+    | (df_rack_filtered["PUE"] == 0)
+    ]
+    
+    st.markdown("### Broken Sensor Detection (Values = 0)")
+    
+    if len(broken_sensors) > 0:
+        st.warning(f"{len(broken_sensors)} potential broken sensor readings detected.")
+        st.dataframe(
+            broken_sensors[["FACILITY_ID", "RACK_ID", "TIME_WINDOW", "AVG_TEMP_C", "AVG_POWER_KW", "EFFICIENCY", "PUE"]],
+            use_container_width=True
+        )
+    else:
+        st.success("✅ No broken sensor readings detected.")
+
+    
     # -------------------------------------------------
     # 3. KPI Summary Table by Facility
     # -------------------------------------------------
@@ -623,11 +618,3 @@ with tab3:
     A consistent downward slope or sudden drop in efficiency indicates localized energy imbalance,  
     possible hardware degradation, or cooling system inefficiency for that rack.
     """)
-
-
-
-
-
-
-
-
